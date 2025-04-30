@@ -1,0 +1,9 @@
+{
+  "resourceType": "Patient",
+  "id": "123",
+  "name": [{"family": "Doe", "given": ["John"]}],
+  "birthDate": "1990-05-23",
+  "identifier": [{"system": "http://hospital.example.org/mrn", "value": "99999"}],
+  "address": [{"line": ["123 Main St"], "city": "Somewhere"}],
+  "telecom": [{"system": "phone", "value": "555-1234"}]
+}

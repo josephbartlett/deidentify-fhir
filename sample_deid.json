@@ -1,0 +1,10 @@
+{
+  "resourceType": "Patient",
+  "id": "123",
+  "identifier": [
+    {
+      "system": "http://hospital.example.org/mrn",
+      "value": "90455a11de4070dc"
+    }
+  ]
+}
