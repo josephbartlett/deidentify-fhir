@@ -3,8 +3,8 @@
   "id": "123",
   "identifier": [
     {
-      "system": "http://hospital.example.org/mrn",
-      "value": "90455a11de4070dc"
+      "value": "861989986fbe717c",
+      "system": "http://hospital.example.org/mrn"
     }
   ]
 }

@@ -86,6 +86,8 @@ PHI_POLICY: Dict[str, List[str]] = {
 
 # Which identifier systems should be hashed rather than removed.
 # Extend as needed (MRN, SSN, etc.)
+# Identifier.system values that are retained (after hashing). Any identifier
+# with a system not listed here is removed entirely.
 HASHED_IDENTIFIER_SYSTEMS = {
     "http://hospital.example.org/mrn",
     "urn:system:mrn",
@@ -116,17 +118,23 @@ def sha256_hash(value: str, salt: str) -> str:
 
 
 def pseudonymise_identifier(identifier: Dict[str, Any], salt: str) -> Dict[str, Any]:
-    """Hash `identifier.value` if its `system` is in HASHED_IDENTIFIER_SYSTEMS.
-    Otherwise drop the entire identifier."""
-    # Work on a shallow copy to avoid mutating the caller's object in-place.
-    ident = identifier.copy()
+    """
+    Mask an identifier by hashing its value with the given salt.
+    Keeps the `system` field if present, drops all other sub-fields except the masked `value`.
+    Returns an empty dict if no value is present.
+    """
+    # Extract original value; nothing to mask if value absent
+    original = identifier.get("value")
+    if original is None:
+        return {}
 
-    if ident.get("system") in HASHED_IDENTIFIER_SYSTEMS and "value" in ident:
-        ident["value"] = sha256_hash(str(ident["value"]), salt)
-        return ident
-
-    # Not a system we retain – return empty dict to indicate removal.
-    return {}
+    # Compute deterministic hash of the original value
+    masked_value = sha256_hash(str(original), salt)
+    # Build masked identifier with only system (if any) and hashed value
+    masked: Dict[str, Any] = {"value": masked_value}
+    if "system" in identifier:
+        masked["system"] = identifier["system"]
+    return masked
 
 
 def _parse_fhir_date(value: str) -> tuple[_dt.datetime | None, str]:
@@ -229,27 +237,32 @@ def recursively_deidentify(
                     continue  # do not remove
 
                 if key == "identifier":
-                    # identifier may be List[Identifier] or single Identifier
                     identifiers = val if isinstance(val, list) else [val]
                     kept: List[Dict[str, Any]] = []
+
                     for ident in identifiers:
-                        processed = pseudonymise_identifier(ident, salt)
-                        if processed:
-                            kept.append(processed)
+                        system = ident.get("system")
+
+                        # Keep only whitelisted systems (if system absent we drop)
+                        if system and system in HASHED_IDENTIFIER_SYSTEMS:
+                            processed = pseudonymise_identifier(ident, salt)
+                            if processed:
+                                kept.append(processed)
+
                     if kept:
                         new_obj[key] = kept if isinstance(val, list) else kept[0]
                 # Skip all other PHI keys outright
                 continue
 
-            # Date shifting for date/dateTime/instant primitives
-            if key in ("birthDate", "deceasedDateTime") or key.endswith("Date") or key.endswith("DateTime") or key.endswith("instant"):
-                if isinstance(val, str):
+            # Date shifting – attempt to parse *any* string value as a FHIR date
+            if isinstance(val, str):
+                dt_obj, _ = _parse_fhir_date(val)
+                if dt_obj is not None:
                     collapse = collapse_dates or (
                         safe_harbor and key == "birthDate"
                     )
-                    birth_val = shift_date(val, offset_days, collapse_to_year=collapse)
-
-                    new_obj[key] = birth_val
+                    shifted_val = shift_date(val, offset_days, collapse_to_year=collapse)
+                    new_obj[key] = shifted_val
                     continue
             # Recurse
             new_obj[key] = recursively_deidentify(
@@ -287,9 +300,18 @@ def deidentify_resource(
 ) -> Dict[str, Any]:
     """Driver function for a single FHIR resource."""
     # If patient‐level identifier exists, derive deterministic offset
-    patient_id = (
-        resource.get("id") if resource.get("resourceType") == "Patient" else resource.get("subject", {}).get("reference", "")
-    )
+    if resource.get("resourceType") == "Patient":
+        patient_id = resource.get("id", "")
+    else:
+        # FHIR often represents the subject reference as either a Dict or a
+        # plain string (e.g. "Patient/123"). Handle both.
+        subject = resource.get("subject") or resource.get("patient") or ""
+        if isinstance(subject, dict):
+            patient_id = subject.get("reference", "")
+        elif isinstance(subject, str):
+            patient_id = subject
+        else:
+            patient_id = ""
     offset = shift_days if shift_days is not None else deterministic_offset(salt, patient_id)
     return recursively_deidentify(resource, salt, offset, safe_harbor=safe_harbor)
 
