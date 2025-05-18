@@ -7,3 +7,4 @@
   "address": [{"line": ["123 Main St"], "city": "Somewhere"}],
   "telecom": [{"system": "phone", "value": "555-1234"}]
 }
+
