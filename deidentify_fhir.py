@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -96,6 +97,11 @@ HASHED_IDENTIFIER_SYSTEMS = {
 # Placeholder used when user does not provide their own secret. Using this value
 # unchanged is strongly discouraged and will trigger a runtime warning.
 DEFAULT_SALT_PLACEHOLDER = "change-me-salt"
+
+FHIR_DATE_RE = re.compile(
+    r"^\d{4}-\d{2}(-\d{2}(T\d{2}:\d{2}(:\d{2}(?:\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})?)?)?$"
+)
+DATE_KEY_SUFFIXES = ("date", "datetime", "instant")
 
 ##########################
 # 2.  CORE LOGIC         #
@@ -258,21 +264,23 @@ def recursively_deidentify(
                 # Skip all other PHI keys outright
                 continue
 
-            # Date shifting – attempt to parse *any* string value as a FHIR date
+            # Date shifting – only parse strings that look like dates
             if isinstance(val, str):
-                dt_obj, _, _ = _parse_fhir_date(val)
-                if dt_obj is not None:
-                    shifted_val = shift_date(val, offset_days, collapse_to_year=collapse_dates)
-                    if safe_harbor and key == "birthDate":
-                        try:
-                            year = int(shifted_val[:4])
-                            age = _dt.date.today().year - year
-                            if age >= 90:
-                                shifted_val = "1900"
-                        except Exception:
-                            pass
-                    new_obj[key] = shifted_val
-                    continue
+                key_lower = key.lower()
+                if key_lower.endswith(DATE_KEY_SUFFIXES) or FHIR_DATE_RE.fullmatch(val):
+                    dt_obj, _, _ = _parse_fhir_date(val)
+                    if dt_obj is not None:
+                        shifted_val = shift_date(val, offset_days, collapse_to_year=collapse_dates)
+                        if safe_harbor and key == "birthDate":
+                            try:
+                                year = int(shifted_val[:4])
+                                age = _dt.date.today().year - year
+                                if age >= 90:
+                                    shifted_val = "1900"
+                            except Exception:
+                                pass
+                        new_obj[key] = shifted_val
+                        continue
             # Recurse
             new_obj[key] = recursively_deidentify(
                 val,

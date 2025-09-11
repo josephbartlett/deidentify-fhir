@@ -43,3 +43,14 @@ def test_fractional_seconds_and_timezone_preserved(timestamp, offset, tz, frac):
     assert tz_shifted == tz
     assert frac_shifted == frac
     assert (dt_shifted - dt_orig).days == offset
+
+
+def test_unrelated_string_unchanged():
+    resource = {
+        "resourceType": "Observation",
+        "id": "obs",
+        "valueString": "1234",
+    }
+
+    deid = deidentify_resource(resource, salt="s", shift_days=400)
+    assert deid["valueString"] == "1234"
