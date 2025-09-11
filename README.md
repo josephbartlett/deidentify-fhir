@@ -39,27 +39,12 @@ deidentify-fhir --help
 
 ---
 
-## Customising policies & hashed identifiers
 
-Two hooks allow you to adapt the tool to local requirements.
+## Policy customization
 
-### `HASHED_IDENTIFIER_SYSTEMS`
+The built-in `PHI_POLICY` in `deidentify_fhir.py` defines which fields are removed for each resource type. Provide a JSON file with `--policy` to override or extend these defaults.
 
-Identifiers whose `system` URI is listed in `HASHED_IDENTIFIER_SYSTEMS` are retained after
-hashing. Extend the set in `deidentify_fhir.py` if you need to keep additional identifiers:
-
-```python
-# deidentify_fhir.py
-HASHED_IDENTIFIER_SYSTEMS = {
-    "http://hospital.example.org/mrn",
-    "http://registry.example/nhs-number",  # custom system
-}
-```
-
-### Overriding the PHI policy with `--policy`
-
-Supply a JSON file mapping resource types to the fields that should be removed. Entries in
-the file replace the built-in defaults. Example `policy.json`:
+Example `policy.json`:
 
 ```json
 {
@@ -74,8 +59,20 @@ Run with:
 deidentify-fhir input.json --policy policy.json --salt-file /run/secrets/deid_salt
 ```
 
----
+### Hashing additional identifier systems
 
+Identifiers whose `system` URI appears in `HASHED_IDENTIFIER_SYSTEMS` are kept after hashing. When extending `PHI_POLICY`, also add any identifier systems you wish to retain in hashed form:
+
+```python
+# deidentify_fhir.py
+PHI_POLICY = { ... }
+HASHED_IDENTIFIER_SYSTEMS = {
+    "http://hospital.example.org/mrn",
+    "http://registry.example/nhs-number",  # custom system
+}
+```
+
+---
 ## Project structure
 
 ```
