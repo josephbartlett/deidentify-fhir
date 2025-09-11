@@ -1,11 +1,4 @@
-# Ensure project root on import path so `deidentify_fhir` module is discoverable
-import pathlib, sys, os
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from deidentify_fhir import pseudonymise_identifier  # noqa: E402
+from deidentify_fhir import pseudonymise_identifier
 
 
 def test_hash_deterministic():

@@ -1,11 +1,4 @@
-import pathlib, sys
-
-# Ensure project root is importable
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from deidentify_fhir import deidentify_resource  # noqa: E402
+from deidentify_fhir import deidentify_resource
 
 
 def test_identifier_whitelist():

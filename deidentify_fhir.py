@@ -187,17 +187,18 @@ def _format_fhir_date(original: str, shifted: _dt.datetime, suffix: str) -> str:
 def shift_date(value: str, offset_days: int, collapse_to_year: bool = False) -> str:
     """Shift a FHIR date/dateTime/instant by `offset_days`.
 
-    If `collapse_to_year` is True, the returned string is reduced to the year part
-    only (Safe-Harbor compliant). Time-zones are preserved.
+    If `collapse_to_year` is True, no shifting occurs and only the year component is
+    returned (HIPAA Safe Harbor compliant). Time-zones are preserved otherwise.
     """
     dt, tz_suffix = _parse_fhir_date(value)
     if dt is None:
         return value  # give up – leave unchanged, but caller may warn/log
 
-    shifted = dt + _dt.timedelta(days=offset_days)
-
     if collapse_to_year:
-        return f"{shifted.year:04d}"
+        # Skip shifting entirely when collapsing to year precision
+        return f"{dt.year:04d}"
+
+    shifted = dt + _dt.timedelta(days=offset_days)
 
     return _format_fhir_date(value, shifted, tz_suffix)
 
@@ -217,25 +218,13 @@ def recursively_deidentify(
         if resource_type != "*":
             # Append generic rules, avoid duplicates
             phi_fields += [f for f in PHI_POLICY.get("*", []) if f not in phi_fields]
+        if safe_harbor and "birthDate" in phi_fields:
+            phi_fields.remove("birthDate")
 
         new_obj: Dict[str, Any] = {}
         for key, val in obj.items():
             # Remove PHI fields
             if key in phi_fields:
-                # Special handling for Safe Harbor birthDate retention at year precision
-                if safe_harbor and key == "birthDate":
-                    # Keep the element but collapse precision and apply age aggregation.
-                    birth_val = shift_date(val, offset_days, collapse_to_year=True)
-                    try:
-                        year = int(birth_val[:4])
-                        age = _dt.date.today().year - year
-                        if age >= 90:
-                            birth_val = "1900"  # aggregate 90+
-                    except Exception:
-                        pass
-                    new_obj[key] = birth_val
-                    continue  # do not remove
-
                 if key == "identifier":
                     identifiers = val if isinstance(val, list) else [val]
                     kept: List[Dict[str, Any]] = []
@@ -258,10 +247,15 @@ def recursively_deidentify(
             if isinstance(val, str):
                 dt_obj, _ = _parse_fhir_date(val)
                 if dt_obj is not None:
-                    collapse = collapse_dates or (
-                        safe_harbor and key == "birthDate"
-                    )
-                    shifted_val = shift_date(val, offset_days, collapse_to_year=collapse)
+                    shifted_val = shift_date(val, offset_days, collapse_to_year=collapse_dates)
+                    if safe_harbor and key == "birthDate":
+                        try:
+                            year = int(shifted_val[:4])
+                            age = _dt.date.today().year - year
+                            if age >= 90:
+                                shifted_val = "1900"
+                        except Exception:
+                            pass
                     new_obj[key] = shifted_val
                     continue
             # Recurse
@@ -312,8 +306,19 @@ def deidentify_resource(
             patient_id = subject
         else:
             patient_id = ""
-    offset = shift_days if shift_days is not None else deterministic_offset(salt, patient_id)
-    return recursively_deidentify(resource, salt, offset, safe_harbor=safe_harbor)
+    if safe_harbor:
+        offset = 0
+        collapse = True
+    else:
+        offset = shift_days if shift_days is not None else deterministic_offset(salt, patient_id)
+        collapse = False
+    return recursively_deidentify(
+        resource,
+        salt,
+        offset,
+        collapse_dates=collapse,
+        safe_harbor=safe_harbor,
+    )
 
 
 ##########################
