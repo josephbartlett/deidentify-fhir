@@ -119,15 +119,27 @@ def save_resource(resource: Dict[str, Any], output_path: str | os.PathLike) -> N
         f.write("\n")
 
 
-def sha256_hash(value: str, salt: str) -> str:
-    return hashlib.sha256((salt + value).encode()).hexdigest()[:16]  # first 16 hex chars
+def sha256_hash(value: str, salt: str, length: int | None = None) -> str:
+    """Return a SHA-256 hash for ``value`` salted with ``salt``.
+
+    By default the full 64-character hexadecimal digest is returned.  When
+    ``length`` is provided the digest is truncated to the specified number of
+    characters.
+    """
+    digest = hashlib.sha256((salt + value).encode()).hexdigest()
+    return digest if length is None else digest[:length]
 
 
-def pseudonymise_identifier(identifier: Dict[str, Any], salt: str) -> Dict[str, Any]:
+def pseudonymise_identifier(
+    identifier: Dict[str, Any],
+    salt: str,
+    hash_length: int | None = None,
+) -> Dict[str, Any]:
     """
     Mask an identifier by hashing its value with the given salt.
-    Keeps the `system` field if present, drops all other sub-fields except the masked `value`.
-    Returns an empty dict if no value is present.
+    Keeps the `system` field if present, drops all other sub-fields except the masked
+    ``value``. ``hash_length`` controls how many characters of the hash to retain
+    (default: full 64). Returns an empty dict if no value is present.
     """
     # Extract original value; nothing to mask if value absent
     original = identifier.get("value")
@@ -135,7 +147,7 @@ def pseudonymise_identifier(identifier: Dict[str, Any], salt: str) -> Dict[str, 
         return {}
 
     # Compute deterministic hash of the original value
-    masked_value = sha256_hash(str(original), salt)
+    masked_value = sha256_hash(str(original), salt, hash_length)
     # Build masked identifier with only system (if any) and hashed value
     masked: Dict[str, Any] = {"value": masked_value}
     if "system" in identifier:
