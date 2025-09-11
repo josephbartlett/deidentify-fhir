@@ -137,11 +137,13 @@ def pseudonymise_identifier(identifier: Dict[str, Any], salt: str) -> Dict[str, 
     return masked
 
 
-def _parse_fhir_date(value: str) -> tuple[_dt.datetime | None, str]:
+def _parse_fhir_date(value: str) -> tuple[_dt.datetime | None, str, int]:
     """Best-effort parse of a FHIR date/dateTime/instant string.
 
-    Returns (datetime_obj_or_None, tz_suffix) where tz_suffix preserves the original
-    timezone designator ("Z" or e.g. "+02:00") so we can round-trip exactly.
+    Returns ``(datetime_obj_or_None, tz_suffix, fractional_precision)`` where
+    ``tz_suffix`` preserves the original timezone designator ("Z" or e.g.
+    "+02:00") and ``fractional_precision`` is the number of digits in the
+    fractional seconds component (0 if absent) so we can round‑trip exactly.
     """
     try:
         # Separate timezone suffix so we can re-attach later.
@@ -158,6 +160,11 @@ def _parse_fhir_date(value: str) -> tuple[_dt.datetime | None, str]:
         else:
             core, suffix = value, ""
 
+        # Detect fractional seconds precision before parsing
+        frac_precision = 0
+        if "." in core:
+            frac_precision = len(core.split(".")[1])
+
         if len(core) == 4:
             dt = _dt.datetime(int(core), 1, 1)
         elif len(core) == 7:
@@ -166,13 +173,15 @@ def _parse_fhir_date(value: str) -> tuple[_dt.datetime | None, str]:
             dt = _dt.datetime.strptime(core, "%Y-%m-%d")
         else:
             dt = _dt.datetime.fromisoformat(core)
-        return dt, suffix
+        return dt, suffix, frac_precision
     except Exception:
-        return None, ""
+        return None, "", 0
 
 
-def _format_fhir_date(original: str, shifted: _dt.datetime, suffix: str) -> str:
-    """Format `shifted` to match the precision of `original` and attach suffix."""
+def _format_fhir_date(
+    original: str, shifted: _dt.datetime, suffix: str, frac_precision: int
+) -> str:
+    """Format ``shifted`` to match the precision of ``original`` and attach suffix."""
     length = len(original.rstrip("Z"))  # exclude Z when measuring precision
     if length == 4:
         return f"{shifted.year:04d}"
@@ -181,16 +190,22 @@ def _format_fhir_date(original: str, shifted: _dt.datetime, suffix: str) -> str:
     elif length == 10:
         return shifted.strftime("%Y-%m-%d")
     else:
-        return shifted.isoformat(timespec="seconds") + suffix
+        if frac_precision > 0:
+            iso = shifted.isoformat(timespec="microseconds")
+            if frac_precision < 6:
+                iso = iso[: -(6 - frac_precision)]
+            return iso + suffix
+        else:
+            return shifted.isoformat(timespec="seconds") + suffix
 
 
 def shift_date(value: str, offset_days: int, collapse_to_year: bool = False) -> str:
-    """Shift a FHIR date/dateTime/instant by `offset_days`.
+    """Shift a FHIR date/dateTime/instant by ``offset_days``.
 
-    If `collapse_to_year` is True, no shifting occurs and only the year component is
+    If ``collapse_to_year`` is True, no shifting occurs and only the year component is
     returned (HIPAA Safe Harbor compliant). Time-zones are preserved otherwise.
     """
-    dt, tz_suffix = _parse_fhir_date(value)
+    dt, tz_suffix, frac_precision = _parse_fhir_date(value)
     if dt is None:
         return value  # give up – leave unchanged, but caller may warn/log
 
@@ -200,7 +215,7 @@ def shift_date(value: str, offset_days: int, collapse_to_year: bool = False) -> 
 
     shifted = dt + _dt.timedelta(days=offset_days)
 
-    return _format_fhir_date(value, shifted, tz_suffix)
+    return _format_fhir_date(value, shifted, tz_suffix, frac_precision)
 
 
 def recursively_deidentify(
@@ -245,7 +260,7 @@ def recursively_deidentify(
 
             # Date shifting – attempt to parse *any* string value as a FHIR date
             if isinstance(val, str):
-                dt_obj, _ = _parse_fhir_date(val)
+                dt_obj, _, _ = _parse_fhir_date(val)
                 if dt_obj is not None:
                     shifted_val = shift_date(val, offset_days, collapse_to_year=collapse_dates)
                     if safe_harbor and key == "birthDate":
