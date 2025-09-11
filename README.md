@@ -11,8 +11,8 @@ run ad-hoc from the shell.
 
 * **Removes HIPAA direct identifiers** according to a configurable policy.
 * **Deterministically hashes** identifiers you still need (e.g. MRN) using SHA-256 + salt.
-* **Shifts dates by ±N days** (deterministic per patient) while preserving relative timelines.
-* **Safe-Harbor mode** collapses dates to year precision & aggregates ages ≥ 90.
+* **Shifts dates by ±N days** (deterministic per patient) while preserving relative timelines *(disabled with `--safe-harbor`)*.
+* **Safe-Harbor mode** truncates all dates to year precision, aggregates ages ≥ 90, and turns off date shifting.
 * **Streaming support** – read/write from `stdin` / `stdout` with `-`.
 * **Zero external dependencies** — pure Python ≥ 3.9.
 
@@ -35,6 +35,43 @@ The CLI help screen lists all available options:
 
 ```bash
 deidentify-fhir --help
+```
+
+---
+
+## Customising policies & hashed identifiers
+
+Two hooks allow you to adapt the tool to local requirements.
+
+### `HASHED_IDENTIFIER_SYSTEMS`
+
+Identifiers whose `system` URI is listed in `HASHED_IDENTIFIER_SYSTEMS` are retained after
+hashing. Extend the set in `deidentify_fhir.py` if you need to keep additional identifiers:
+
+```python
+# deidentify_fhir.py
+HASHED_IDENTIFIER_SYSTEMS = {
+    "http://hospital.example.org/mrn",
+    "http://registry.example/nhs-number",  # custom system
+}
+```
+
+### Overriding the PHI policy with `--policy`
+
+Supply a JSON file mapping resource types to the fields that should be removed. Entries in
+the file replace the built-in defaults. Example `policy.json`:
+
+```json
+{
+  "Patient": ["name", "address"],
+  "Observation": ["identifier"]
+}
+```
+
+Run with:
+
+```bash
+deidentify-fhir input.json --policy policy.json --salt-file /run/secrets/deid_salt
 ```
 
 ---
