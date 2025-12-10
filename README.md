@@ -5,6 +5,8 @@ Protected Health Information (PHI) from FHIR JSON resources.  It was written wit
 HIPAA Safe-Harbor requirements in mind and can be integrated into ETL pipelines or
 run ad-hoc from the shell.
 
+This is example tooling and not a legal guarantee of HIPAA compliance; organizations must perform their own validation and governance.
+
 ---
 
 ## Features
